@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>DobotBridge</AssemblyName>
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Dobot\DobotDll.cs" Link="Dobot\DobotDll.cs" />
+    <Compile Include="..\Dobot\DobotDllType.cs" Link="Dobot\DobotDllType.cs" />
+    <Compile Include="..\Models\DobotPoint.cs" Link="Models\DobotPoint.cs" />
+    <Compile Include="..\Models\DobotPositions.cs" Link="Models\DobotPositions.cs" />
+    <Compile Include="..\Services\DobotService.cs" Link="Services\DobotService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\DobotDll.dll" Link="DobotDll.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Qt5Core.dll" Link="Qt5Core.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Qt5Network.dll" Link="Qt5Network.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Qt5SerialPort.dll" Link="Qt5SerialPort.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\msvcp120.dll" Link="msvcp120.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\msvcr120.dll" Link="msvcr120.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

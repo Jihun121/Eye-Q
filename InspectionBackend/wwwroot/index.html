@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inspection Monitor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --line: #d9e0ea;
+      --text: #172033;
+      --muted: #69758a;
+      --ok: #138a43;
+      --ng: #c83232;
+      --blue: #2563eb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    main {
+      padding: 18px 20px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .metric strong {
+      font-size: 22px;
+    }
+
+    .table-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      background: #eef3fa;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      min-width: 42px;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge.ok {
+      background: var(--ok);
+    }
+
+    .badge.ng {
+      background: var(--ng);
+    }
+
+    .thumbs {
+      display: flex;
+      gap: 8px;
+    }
+
+    .thumb {
+      width: 108px;
+      height: 72px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #e9edf4;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .empty {
+      padding: 28px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .summary {
+        grid-template-columns: 1fr;
+      }
+
+      th:nth-child(1),
+      td:nth-child(1) {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Inspection Monitor</h1>
+    <button type="button" onclick="loadInspections()">Refresh</button>
+  </header>
+
+  <main>
+    <section class="summary">
+      <div class="metric">
+        <span>Total</span>
+        <strong id="totalCount">0</strong>
+      </div>
+      <div class="metric">
+        <span>OK</span>
+        <strong id="okCount">0</strong>
+      </div>
+      <div class="metric">
+        <span>NG</span>
+        <strong id="ngCount">0</strong>
+      </div>
+    </section>
+
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Time</th>
+            <th>Judgment</th>
+            <th>Label</th>
+            <th>Confidence</th>
+            <th>Images</th>
+            <th>JSON</th>
+          </tr>
+        </thead>
+        <tbody id="inspectionRows">
+          <tr>
+            <td colspan="7" class="empty">Loading...</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    async function loadInspections() {
+      const rows = document.getElementById("inspectionRows");
+      rows.innerHTML = '<tr><td colspan="7" class="empty">Loading...</td></tr>';
+
+      const response = await fetch("/api/inspections");
+      const inspections = await response.json();
+
+      document.getElementById("totalCount").textContent = inspections.length;
+      document.getElementById("okCount").textContent = inspections.filter(x => x.judgment === "OK").length;
+      document.getElementById("ngCount").textContent = inspections.filter(x => x.judgment === "NG").length;
+
+      if (inspections.length === 0) {
+        rows.innerHTML = '<tr><td colspan="7" class="empty">No inspection data</td></tr>';
+        return;
+      }
+
+      rows.innerHTML = inspections.map(item => {
+        const badgeClass = item.judgment === "OK" ? "ok" : "ng";
+        return `
+          <tr>
+            <td>${item.id}</td>
+            <td>${formatTime(item.timestamp)}</td>
+            <td><span class="badge ${badgeClass}">${escapeHtml(item.judgment)}</span></td>
+            <td>${escapeHtml(item.label)}</td>
+            <td>${(item.confidence * 100).toFixed(1)}%</td>
+            <td>
+              <div class="thumbs">
+                <a href="${item.originalImageUrl}" target="_blank"><img class="thumb" src="${item.originalImageUrl}" alt="original"></a>
+                <a href="${item.resultImageUrl}" target="_blank"><img class="thumb" src="${item.resultImageUrl}" alt="result"></a>
+              </div>
+            </td>
+            <td><a href="${item.jsonUrl}" target="_blank">result.json</a></td>
+          </tr>`;
+      }).join("");
+    }
+
+    function formatTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return escapeHtml(value);
+      }
+
+      return date.toLocaleString();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    loadInspections();
+    setInterval(loadInspections, 5000);
+  </script>
+</body>
+</html>

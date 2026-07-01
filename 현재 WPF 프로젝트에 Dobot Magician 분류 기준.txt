@@ -1,0 +1,460 @@
+현재 C# WPF 프로젝트에 Dobot Magician 분류 기능을 통합해줘.
+
+목표 동작은 다음과 같다.
+
+1. Arduino 컨베이어를 13바퀴 이동시킨다.
+2. 컨베이어를 정지하고 카메라 위치에서 ONNX 검출을 수행한다.
+3. 검출 결과를 Normal / Defect / NoDetection 3가지로 분류한다.
+4. NoDetection, 즉 "탐지 없음" 또는 confidence 0.0% 또는 유효 탐지 결과가 없는 경우에는 Dobot을 절대 동작시키지 않는다.
+5. Normal 또는 Defect인 경우에만 다시 Arduino 컨베이어를 13바퀴 이동시켜 Dobot Pick 위치까지 보낸다.
+6. Dobot Pick 위치에 도착하면 컨베이어를 정지한다.
+7. Normal이면 Dobot이 Pick 위치에서 제품을 집고 RightPlace 위치에 놓는다.
+8. Defect이면 Dobot이 Pick 위치에서 제품을 집고 LeftPlace 위치에 놓는다.
+9. Dobot 동작 중에는 컨베이어가 절대 움직이지 않게 한다.
+10. Dobot 분류 명령 후 5초간 대기한 뒤 다음 사이클로 넘어갈 수 있게 한다.
+
+중요한 안전 조건:
+- NoDetection일 때는 PickAndPlaceRight(), PickAndPlaceLeft()를 절대 호출하지 말 것.
+- if result == Normal else Left 방식으로 구현하지 말 것.
+- 반드시 switch 또는 명시적인 if / else if / else 구조로 Normal, Defect, NoDetection을 분리할 것.
+- 검출 실패 상태에서 이전 검사 결과를 재사용하지 말 것.
+- 매 검사 사이클 시작 시 검사 결과 기본값은 NoDetection으로 초기화할 것.
+- Dobot 동작 중 Arduino Move 명령이 실행되지 않게 할 것.
+
+테스트 프로젝트에서 이미 검증된 Dobot 관련 파일을 실제 프로젝트로 이식한다.
+
+가져올 파일:
+- Models/DobotPoint.cs
+- Models/DobotPositions.cs
+- Services/DobotService.cs
+- DobotClientDemo.CPlusDll 관련 DLL wrapper 파일
+- DobotDll.dll 또는 CPlusDll 폴더의 실제 네이티브 DLL
+
+현재 테스트 프로젝트의 좌표는 아래 값을 사용한다.
+
+Pick 위치:
+X = 238.6862
+Y = -183.3094
+Z = 0.3737
+R = 0
+
+RightPlace 위치, 정상:
+X = 242.7053
+Y = 167.1131
+Z = -58.5462
+R = 0
+
+LeftPlace 위치, 불량:
+X = 239.0951
+Y = -30.3893
+Z = -55.5260
+R = 0
+
+DobotPositions.cs는 다음 구조를 유지한다.
+
+public static class DobotPositions
+{
+    public static readonly DobotPoint Pick = new(238.6862, -183.3094, 0.3737, 0);
+    public static readonly DobotPoint RightPlace = new(242.7053, 167.1131, -58.5462, 0);
+    public static readonly DobotPoint LeftPlace = new(239.0951, -30.3893, -55.5260, 0);
+}
+
+DobotPoint.cs는 다음 구조를 유지한다.
+
+public sealed record DobotPoint(double X, double Y, double Z, double R);
+
+DobotService.cs는 테스트 프로젝트에서 검증된 구조를 그대로 사용하되, 실제 프로젝트 namespace에 맞게 변경한다.
+현재 DobotService는 다음 기능을 제공해야 한다.
+
+- Connect()
+- MoveHome()
+- GetCurrentPose()
+- SetSuction(bool on)
+- PickAndPlaceRight()
+- PickAndPlaceLeft()
+
+현재 테스트 프로젝트의 DobotService는 큐 기반으로 동작한다.
+PickAndPlaceRight()는 RightPlace로 분류하고, PickAndPlaceLeft()는 LeftPlace로 분류한다.
+내부에서는 QueuePickAndPlace(DobotPoint place)를 사용해서 Pick → Suction ON → Lift → Place → Suction OFF → Home 순서로 명령을 넣는다.
+
+추가 개선:
+현재 QueuePickAndPlace가 바로 Pick 위치로 이동한다면, 충돌 방지를 위해 Pick 위쪽 접근 위치를 먼저 거치도록 수정해줘.
+
+권장 흐름:
+1. Pick 위쪽 위치로 이동
+2. Pick 위치로 하강
+3. Suction ON
+4. 300ms 대기
+5. Pick 위쪽 위치로 상승
+6. Place 위쪽 위치로 이동
+7. Place 위치로 하강
+8. Suction OFF
+9. Place 위쪽 위치로 상승
+10. Home 이동
+
+위쪽 접근 위치는 다음 방식으로 계산한다.
+travelZ = Math.Max(DobotPositions.Pick.Z, place.Z) + 50;
+pickTravelPoint = Pick 좌표의 Z만 travelZ로 변경
+placeTravelPoint = place 좌표의 Z만 travelZ로 변경
+
+ONNX 결과 처리를 위해 InspectionResult enum을 추가한다.
+
+public enum InspectionResult
+{
+    Normal,
+    Defect,
+    NoDetection
+}
+
+ONNX 결과 변환 함수를 만들어줘.
+
+조건:
+- label이 null, empty, whitespace이면 NoDetection
+- label에 "탐지 없음"이 포함되면 NoDetection
+- confidence가 0 이하이면 NoDetection
+- confidence가 최소 기준값보다 낮으면 NoDetection
+- label이 NORMAL 또는 정상 이면 Normal
+- label이 FAIL, DEFECT, 불량, SCRATCH, CRACK, CONTAMINATION, EDGE_CHIPPING, PATTERN_DEFECT 등 불량 클래스이면 Defect
+- 그 외 알 수 없는 label은 안전하게 NoDetection으로 처리
+
+예시 함수명:
+private InspectionResult ConvertToInspectionResult(string label, double confidence)
+
+자동 검사 사이클 함수를 만들어줘.
+
+예시 함수명:
+public async Task RunOneInspectionCycleAsync()
+
+흐름:
+1. inspectionResult를 NoDetection으로 초기화
+2. Arduino 13바퀴 이동
+3. 300ms 안정화 대기
+4. 카메라 촬영
+5. ONNX 추론
+6. ConvertToInspectionResult로 Normal / Defect / NoDetection 변환
+7. NoDetection이면:
+   - 상태 메시지: "탐지 없음: Dobot 동작 안 함. 수동 확인 필요."
+   - Arduino StopAsync 호출
+   - PickAndPlaceRight / PickAndPlaceLeft 호출 금지
+   - return
+8. Normal 또는 Defect이면:
+   - Arduino 13바퀴 이동
+   - 300ms 안정화 대기
+   - Normal이면 await Task.Run(() => _dobotService.PickAndPlaceRight())
+   - Defect이면 await Task.Run(() => _dobotService.PickAndPlaceLeft())
+   - await Task.Delay(5000)
+   - 상태 메시지: "분류 완료"
+
+분류 함수는 반드시 이렇게 명시적으로 작성해줘.
+
+switch (inspectionResult)
+{
+    case InspectionResult.Normal:
+        await Task.Run(() => _dobotService.PickAndPlaceRight());
+        await Task.Delay(5000);
+        break;
+
+    case InspectionResult.Defect:
+        await Task.Run(() => _dobotService.PickAndPlaceLeft());
+        await Task.Delay(5000);
+        break;
+
+    case InspectionResult.NoDetection:
+        SetStatus("탐지 없음: Dobot 동작 안 함");
+        await _arduinoService.StopAsync();
+        return;
+}
+
+기존 프로젝트의 Arduino 제어 함수 이름이 다르면, 기존 함수명에 맞게 연결해줘.
+예를 들어 기존에 MoveTurnsAsync(13), StopAsync()가 있으면 그대로 사용하고, 없으면 기존 Serial 명령 함수에 맞춰 래핑 함수를 만들어줘.
+
+기존 ONNX 결과 객체가 다를 수 있으므로, 현재 프로젝트의 결과 객체에서 label과 confidence를 가져오는 부분은 실제 코드에 맞춰 수정해줘.
+단, UI에 "FAIL [탐지 없음 0.0%]"로 표시되는 경우는 반드시 NoDetection으로 처리해야 한다.
+
+Dobot 연결은 매 사이클마다 반복하지 말고 프로그램 시작 또는 자동 검사 시작 전에 한 번만 연결되게 해줘.
+단, 자동 검사 실행 전에 IsConnected가 false이면 Connect()를 한 번 호출해도 된다.
+
+실제 프로젝트에 반영 후 확인할 것:
+- DobotDll.dll이 실행 폴더에 복사되는지 확인
+- 프로젝트 플랫폼 대상이 테스트 프로젝트와 동일한 x86/x64인지 확인
+- COM 포트가 COM7인지 확인
+- Dobot Studio, DobotLab, DobotLink가 포트를 점유하지 않는지 확인
+- NoDetection 상태에서 Dobot이 절대 움직이지 않는지 확인
+- Normal일 때 오른쪽으로 이동하는지 확인
+- Defect일 때 왼쪽으로 이동하는지 확인
+
+추가 요구사항을 반영해줘.
+
+1. XAML 화면에 Dobot 제어 영역을 추가한다.
+
+추가할 UI 요소:
+- Dobot 포트 선택 ComboBox
+- 포트 새로고침 버튼
+- Dobot 연결 버튼
+- Dobot 연결 상태 표시 TextBlock
+- Dobot 비상정지 버튼
+
+예상 UI 구성:
+[Dobot Port: ComboBox] [새로고침] [Dobot 연결] [Dobot 비상정지]
+
+2. Dobot 포트 선택 기능을 구현한다.
+
+프로그램 시작 시 또는 화면 로드 시 SerialPort.GetPortNames()를 사용해서 현재 PC의 COM 포트 목록을 조회한다.
+조회한 포트를 ComboBox에 바인딩하거나 ItemsSource로 넣는다.
+COM7이 있으면 기본 선택값은 COM7로 한다.
+COM7이 없으면 첫 번째 포트를 선택한다.
+포트가 하나도 없으면 Dobot 연결 버튼을 비활성화하거나 "사용 가능한 포트 없음" 상태 메시지를 표시한다.
+
+필요 namespace:
+using System.IO.Ports;
+
+예시 함수명:
+private void LoadDobotPorts()
+
+동작:
+- SerialPort.GetPortNames()
+- 정렬
+- ComboBox.ItemsSource에 적용
+- COM7 우선 선택
+- 없으면 첫 번째 포트 선택
+
+3. DobotService의 PortName 상수 고정을 제거한다.
+
+현재 DobotService는 private const string PortName = "COM7"; 구조라서 실제 프로젝트에서는 포트를 바꿀 수 없다.
+이를 다음 방식 중 하나로 수정한다.
+
+방식 A:
+public string Connect(string portName)
+
+방식 B:
+생성자에서 portName을 받는다.
+public DobotService(string portName)
+
+추천은 방식 A이다.
+
+Connect()를 Connect(string portName)로 바꾸고, 내부에서 선택한 포트명을 사용한다.
+연결 성공 후 ConnectedPortName 같은 속성에 저장한다.
+
+예시:
+public string? ConnectedPortName { get; private set; }
+
+public string Connect(string portName)
+{
+    if (IsConnected)
+        return $"Already connected: {ConnectedPortName}";
+
+    var result = DobotDll.ConnectDobot(portName, Baudrate, firmwareType, version);
+
+    if (result != NoError)
+        throw new InvalidOperationException(GetConnectErrorMessage(result, portName));
+
+    IsConnected = true;
+    ConnectedPortName = portName;
+}
+
+GetConnectErrorMessage도 고정 PortName이 아니라 portName 파라미터를 받아서 메시지를 만들도록 수정한다.
+
+4. XAML의 Dobot 연결 버튼 이벤트를 구현한다.
+
+DobotConnectButton_Click에서 선택된 ComboBox 값을 가져온다.
+포트가 선택되지 않았으면 메시지를 표시하고 return한다.
+선택된 포트로 _dobotService.Connect(selectedPort)를 호출한다.
+성공하면 상태 표시를 "Dobot 연결됨: COMx"로 바꾼다.
+연결 성공 후 Dobot 비상정지 버튼을 활성화한다.
+
+5. Dobot 비상정지 기능을 구현한다.
+
+XAML에 "Dobot 비상정지" 버튼을 추가한다.
+버튼 색상은 눈에 잘 띄게 빨강 계열로 한다.
+자동 검사 중에도 누를 수 있어야 한다.
+
+DobotService에 EmergencyStop() 메서드를 추가한다.
+
+EmergencyStop() 기본 동작:
+- 연결되어 있지 않으면 예외 대신 "Dobot not connected" 메시지를 반환하거나 무시한다.
+- DobotDll.SetQueuedCmdStopExec() 호출
+- DobotDll.SetQueuedCmdClear() 호출
+- IsSuctionOn 상태 갱신은 주의한다.
+  제품을 들고 있는 중 suction을 강제로 OFF하면 제품이 떨어질 수 있으므로, 기본 EmergencyStop에서는 suction OFF를 자동 호출하지 않는다.
+  별도로 사용자가 원하면 Suction OFF 버튼으로 끄게 한다.
+
+예시:
+public string EmergencyStop()
+{
+    if (!IsConnected)
+        return "Dobot is not connected.";
+
+    DobotDll.SetQueuedCmdStopExec();
+    DobotDll.SetQueuedCmdClear();
+
+    return "Dobot emergency stop executed.";
+}
+
+만약 DobotDll.SetQueuedCmdStopExec 함수가 없으면 DobotDll.cs에서 사용 가능한 Queue Stop 관련 함수를 찾아서 적용한다.
+사용 가능한 함수명이 다르면 실제 DLL wrapper의 함수명에 맞춰 수정한다.
+
+6. 실제 자동검사 중 비상정지 버튼을 누르면 Arduino도 정지해야 한다.
+
+MainWindow 또는 InspectionController에 bool _isEmergencyStopped 플래그를 추가한다.
+
+DobotEmergencyStopButton_Click 동작:
+- _isEmergencyStopped = true
+- 자동 검사 루프 중단
+- await _arduinoService.StopAsync()
+- _dobotService.EmergencyStop()
+- 상태 메시지: "비상정지: 컨베이어 정지, Dobot 큐 정지"
+- 자동 시작 버튼 비활성화 또는 재시작 전 초기화 요구
+
+단, 사용자가 말한 버튼명은 "Dobot 비상정지"이지만 실제 장비 안전을 위해 Arduino 컨베이어도 같이 정지시키는 게 맞다.
+
+7. 자동 검사 사이클 곳곳에 비상정지 체크를 넣는다.
+
+예시:
+private void ThrowIfEmergencyStopped()
+{
+    if (_isEmergencyStopped)
+        throw new OperationCanceledException("비상정지 상태입니다.");
+}
+
+RunOneInspectionCycleAsync 내부에서 각 단계 전후에 체크한다.
+
+- 13바퀴 이동 전
+- 13바퀴 이동 후
+- ONNX 검사 전
+- Dobot 분류 전
+- Dobot 분류 후
+
+비상정지 상태이면 Dobot PickAndPlaceRight/Left를 호출하지 않는다.
+
+8. XAML 예시 구조를 추가한다.
+
+예시:
+
+<StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+    <TextBlock Text="Dobot Port"
+               VerticalAlignment="Center"
+               Margin="0,0,8,0"/>
+
+    <ComboBox x:Name="DobotPortComboBox"
+              Width="100"
+              Height="32"
+              Margin="0,0,8,0"/>
+
+    <Button Content="새로고침"
+            Width="90"
+            Height="32"
+            Margin="0,0,8,0"
+            Click="RefreshDobotPortsButton_Click"/>
+
+    <Button x:Name="DobotConnectButton"
+            Content="Dobot 연결"
+            Width="110"
+            Height="32"
+            Margin="0,0,8,0"
+            Click="DobotConnectButton_Click"/>
+
+    <Button x:Name="DobotEmergencyStopButton"
+            Content="Dobot 비상정지"
+            Width="130"
+            Height="32"
+            Background="#C62828"
+            Foreground="White"
+            FontWeight="Bold"
+            Click="DobotEmergencyStopButton_Click"/>
+</StackPanel>
+
+<TextBlock x:Name="DobotStatusText"
+           Text="Dobot 상태: 미연결"
+           Margin="0,6,0,0"/>
+
+9. 코드 비하인드 예시를 실제 프로젝트 구조에 맞게 구현한다.
+
+예시:
+
+private void LoadDobotPorts()
+{
+    var ports = SerialPort.GetPortNames()
+        .OrderBy(port => port)
+        .ToList();
+
+    DobotPortComboBox.ItemsSource = ports;
+
+    if (ports.Contains("COM7"))
+        DobotPortComboBox.SelectedItem = "COM7";
+    else if (ports.Count > 0)
+        DobotPortComboBox.SelectedIndex = 0;
+
+    DobotConnectButton.IsEnabled = ports.Count > 0;
+}
+
+private void RefreshDobotPortsButton_Click(object sender, RoutedEventArgs e)
+{
+    LoadDobotPorts();
+}
+
+private void DobotConnectButton_Click(object sender, RoutedEventArgs e)
+{
+    try
+    {
+        var portName = DobotPortComboBox.SelectedItem as string;
+
+        if (string.IsNullOrWhiteSpace(portName))
+        {
+            DobotStatusText.Text = "Dobot 상태: 포트를 선택하세요.";
+            return;
+        }
+
+        var message = _dobotService.Connect(portName);
+        DobotStatusText.Text = message;
+    }
+    catch (Exception ex)
+    {
+        DobotStatusText.Text = $"Dobot 연결 실패: {ex.Message}";
+    }
+}
+
+private async void DobotEmergencyStopButton_Click(object sender, RoutedEventArgs e)
+{
+    try
+    {
+        _isEmergencyStopped = true;
+
+        await _arduinoService.StopAsync();
+
+        var message = _dobotService.EmergencyStop();
+
+        DobotStatusText.Text = $"비상정지: {message}";
+    }
+    catch (Exception ex)
+    {
+        DobotStatusText.Text = $"비상정지 오류: {ex.Message}";
+    }
+}
+
+10. 자동 검사 시작 전에 Dobot 연결 상태를 확인한다.
+
+자동검사 시작 버튼을 눌렀을 때:
+- Dobot이 연결되어 있지 않으면 "Dobot을 먼저 연결하세요." 표시
+- Arduino가 연결되어 있지 않으면 "Arduino를 먼저 연결하세요." 표시
+- 카메라가 준비되지 않았으면 "카메라를 확인하세요." 표시
+- 모든 장비가 준비된 경우에만 자동 검사 시작
+
+11. NoDetection 조건은 그대로 유지한다.
+
+"탐지 없음", confidence 0.0%, label 없음, 유효 탐지 없음인 경우:
+- Arduino StopAsync 호출
+- Dobot PickAndPlaceRight/Left 호출 금지
+- 상태 메시지 표시
+- 수동 확인 필요 상태로 둔다.
+
+12. 구현 후 반드시 확인한다.
+
+- COM 포트 콤보박스에 실제 포트 목록이 뜨는지
+- COM7이 있으면 기본 선택되는지
+- Dobot 연결 버튼으로 연결되는지
+- 연결 안 된 상태에서 자동검사를 시작하면 막히는지
+- Dobot 비상정지 버튼을 누르면 Queue가 멈추는지
+- Dobot 비상정지 시 Arduino 컨베이어도 정지하는지
+- NoDetection일 때 Dobot이 움직이지 않는지
+- Normal일 때 RightPlace로 가는지
+- Defect일 때 LeftPlace로 가는지

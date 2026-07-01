@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ConveyorInspector.csproj" />
+  <Project Path="InspectionBackend\InspectionBackend.csproj" />
+</Solution>

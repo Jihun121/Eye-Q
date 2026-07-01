@@ -1,0 +1,342 @@
+Conveyor Inspector 포트폴리오 정리
+===================================
+
+1. 프로젝트 한 줄 소개
+--------------------
+Conveyor Inspector는 컨베이어 위의 wafer 이미지를 카메라로 촬영하고, ONNX 기반 YOLO 객체 검출 모델로 정상/불량을 판정한 뒤, Arduino 컨베이어와 Dobot 분류 로봇을 연동하여 자동 분류까지 수행하는 WPF 기반 비전 검사 시스템입니다.
+
+
+2. 프로젝트 목적
+---------------
+제조/검사 공정에서 사람이 직접 wafer 상태를 확인하고 분류하는 과정을 자동화하는 것을 목표로 했습니다.
+
+주요 목표는 다음과 같습니다.
+
+- 컨베이어로 이동하는 검사 대상의 위치 제어
+- 카메라 프레임 캡처 및 검사 시점 제어
+- ONNX 모델을 이용한 wafer/defect 검출
+- 정상/불량/미검출 판정
+- 원본 이미지와 bbox 표시 결과 이미지 저장
+- 검사 결과 JSON 생성
+- Dobot 로봇을 이용한 정상/불량 분류
+- local backend와 frontend를 통한 검사 이력 확인
+
+
+3. 전체 시스템 구성
+------------------
+시스템은 크게 5개 영역으로 구성됩니다.
+
+1. WPF Desktop Application
+   - 검사 실행, 장비 연결, 실시간 카메라 표시, 검사 이력 표시를 담당합니다.
+   - MVVM 구조와 CommunityToolkit.Mvvm을 사용해 View와 로직을 분리했습니다.
+
+2. Camera Service
+   - OpenCvSharp VideoCapture를 사용해 카메라 프레임을 가져옵니다.
+   - 실시간 preview용 프레임과 검사 캡처용 프레임을 분리했습니다.
+   - 컨베이어가 완전히 멈춘 뒤 촬영되도록 프레임 변화량 기반 안정화 확인 기능을 추가했습니다.
+
+3. ONNX Inspection Service
+   - Microsoft.ML.OnnxRuntime으로 YOLO ONNX 모델을 실행합니다.
+   - 검출 결과를 class, confidence, bbox 정보로 해석합니다.
+   - wafer 내부 defect 여부를 기준으로 OK/NG 판정을 수행합니다.
+   - 원본 이미지 위에 bbox, class, confidence, OK/NG 정보를 그린 결과 이미지를 생성합니다.
+
+4. Equipment Control
+   - ArduinoMotorService는 SerialPort JSON 프로토콜로 step motor를 제어합니다.
+   - DobotProcessService는 별도 DobotBridge 프로세스를 통해 Dobot pick & place 명령을 전달합니다.
+   - 자동 검사에서는 컨베이어 이동, 카메라 검사, Dobot 분류가 순차 또는 병렬로 동작합니다.
+
+5. Local Backend & Frontend
+   - ASP.NET Core Minimal API backend를 추가했습니다.
+   - 검사 결과 JSON과 original/result jpg 파일 2장을 multipart/form-data로 업로드합니다.
+   - SQLite DB에 timestamp, judgment, label, confidence, 이미지 경로를 저장합니다.
+   - 정적 HTML frontend에서 검사 이력, OK/NG, confidence, 원본/결과 이미지를 확인할 수 있습니다.
+
+
+4. 사용 기술
+------------
+Client / Desktop
+- C#
+- .NET 8
+- WPF
+- MVVM
+- CommunityToolkit.Mvvm
+- OpenCvSharp4
+- OpenCvSharp4.WpfExtensions
+- Microsoft.ML.OnnxRuntime
+- System.IO.Ports
+
+AI / Vision
+- ONNX Runtime
+- YOLO 기반 object detection / segmentation output parsing
+- bbox drawing
+- confidence thresholding
+- wafer ROI 기준 defect 판정
+
+Hardware / Device
+- Arduino
+- Step motor
+- Serial JSON protocol
+- Dobot robotic arm
+- DobotBridge process integration
+
+Backend / Data
+- ASP.NET Core Minimal API
+- SQLite
+- multipart/form-data upload
+- static file serving
+- HTML/CSS/JavaScript frontend
+
+
+5. 주요 기능
+------------
+1. 실시간 카메라 preview
+   - 카메라 프레임을 WPF Image로 표시합니다.
+   - UI update queue가 과도하게 쌓이지 않도록 프레임 업데이트 backpressure를 적용했습니다.
+
+2. 컨베이어 위치 이동
+   - Arduino에 JSON 명령을 보내 step motor를 지정 회전 수만큼 이동시킵니다.
+   - 이동 완료 후 stop 명령과 응답 확인을 수행합니다.
+
+3. 촬영 안정화
+   - 기존에는 이동 완료 후 고정 delay만 두고 촬영했습니다.
+   - 개선 후에는 카메라 프레임 간 차이를 계산해 컨베이어가 실제로 멈췄는지 확인한 뒤 촬영합니다.
+
+4. ONNX 검사
+   - ONNX Runtime으로 모델을 실행합니다.
+   - YOLO output을 파싱하여 class index, label, confidence, bbox를 추출합니다.
+   - wafer 검출 여부와 defect 위치를 기준으로 OK/NG를 판정합니다.
+
+5. 결과 이미지 생성
+   - 원본 이미지 위에 bbox, class name, confidence, OK/NG를 표시합니다.
+   - wafer는 초록색, 유효 defect는 빨간색, 무시된 defect 후보는 회색으로 구분합니다.
+
+6. 검사 결과 저장
+   - original.jpg
+   - result.jpg
+   - result.json
+   위 3개 파일을 검사별 폴더에 저장합니다.
+
+7. result.json 단순화
+   - 외부 연동에 필요한 4개 필드만 저장하도록 정리했습니다.
+   - timestamp
+   - judgment
+   - label
+   - confidence
+
+8. backend 업로드
+   - 저장된 result.json, original.jpg, result.jpg를 local backend로 업로드합니다.
+   - 업로드는 StreamContent 기반으로 처리해 큰 jpg 파일을 byte array로 한 번에 메모리에 올리지 않도록 개선했습니다.
+
+9. 검사 이력 frontend
+   - backend에 저장된 검사 이력과 이미지를 브라우저에서 확인할 수 있습니다.
+   - local test 주소: http://localhost:5050
+
+10. Dobot 자동 분류
+    - OK 결과는 RightPlace
+    - NG 결과는 LeftPlace
+    - 미검출 결과는 자동 분류를 중단하고 수동 확인이 필요하도록 처리했습니다.
+
+
+6. 핵심 구현 포인트
+------------------
+1. ONNX output parsing
+   YOLO ONNX 모델의 output shape을 확인하고, [1, 300, 38] 형태의 detection output에서 x1, y1, x2, y2, confidence, classIndex를 추출했습니다.
+
+2. defect 판정 로직
+   단순히 defect class가 검출됐다고 바로 NG로 처리하지 않고, wafer bbox 내부에 defect 중심점이 들어오는지 확인했습니다. 이를 통해 배경 오탐을 줄였습니다.
+
+3. threshold 분리
+   일반 confidence threshold와 defect confidence threshold를 분리했습니다. scratch/crack 같은 얇은 결함은 별도의 threshold를 적용할 수 있도록 구조화했습니다.
+
+4. 이미지 저장과 UI 표시 분리
+   검사 이력에 BitmapSource를 계속 들고 있으면 메모리 누적이 발생할 수 있어, 이미지 객체 대신 저장된 파일 경로를 보관하도록 개선했습니다.
+
+5. 비동기 저장/업로드 개선
+   결과 이미지 저장과 backend 업로드가 검사 흐름과 UI를 오래 막지 않도록 비동기 처리했습니다.
+
+6. 업로드 메모리 최적화
+   ReadAllBytesAsync 방식은 jpg 파일 전체를 메모리에 올리기 때문에 반복 검사 시 메모리 부담이 커질 수 있습니다. 이를 FileStream + StreamContent 방식으로 변경했습니다.
+
+7. 카메라 UI 큐 backpressure
+   카메라 preview frame이 UI thread 처리 속도보다 빠르게 들어오면 Dispatcher queue가 쌓일 수 있습니다. UI 업데이트가 이미 대기 중일 때는 새 프레임을 버리는 방식으로 안정성을 높였습니다.
+
+8. 컨베이어 정지 확인
+   단순 delay 방식은 컨베이어가 완전히 멈추기 전에 촬영될 위험이 있었습니다. 프레임 간 motion score를 계산하고, 연속 안정 샘플을 확인한 뒤 검사 이미지를 캡처하도록 개선했습니다.
+
+
+7. 문제 해결 경험
+----------------
+문제 1. ONNX 검사를 여러 장 진행하면 앱이 멈추는 현상
+
+원인 후보
+- ONNX Runtime 내부 native memory 사용량
+- OpenCV Mat clone 반복 생성
+- WPF BitmapSource 누적
+- Dispatcher.BeginInvoke frame update queue 적체
+- backend 업로드 작업 누적
+
+해결
+- 검사 이력에서 BitmapSource 직접 보관 제거
+- 이미지 파일 경로 기반 표시로 변경
+- 카메라 UI 업데이트 backpressure 적용
+- 업로드를 1개씩 처리하도록 SemaphoreSlim 적용
+- jpg 업로드를 StreamContent 방식으로 변경
+- 메모리 로그를 추가해 managed/private/working set을 구분해 확인할 수 있게 함
+
+
+문제 2. 컨베이어가 완전히 멈추기 전에 촬영되는 현상
+
+원인
+- 기존에는 motor move 완료 후 300ms delay만 두고 촬영했습니다.
+- 기계적 관성, 벨트 흔들림, 카메라 프레임 반영 지연이 있을 경우 아직 움직이는 상태에서 촬영될 수 있었습니다.
+
+해결
+- Arduino stop 응답 확인 추가
+- 최소 안정화 대기 시간 900ms 적용
+- 카메라 frame difference 기반 정지 확인 적용
+- 일정 threshold 이하의 motion score가 연속으로 확인된 뒤 촬영하도록 변경
+
+
+문제 3. 회전 보정 추가 추론으로 인한 검사 시간/메모리 증가
+
+원인
+- wafer 영역을 90도/270도 회전시켜 추가 ONNX 검출을 수행하는 보정 로직이 있었습니다.
+- 한 검사당 ONNX 추론이 최대 3회까지 늘어나 메모리와 처리 시간이 증가할 수 있었습니다.
+
+해결
+- 프로젝트 검사 흐름에서 90도/270도 추가 추론 로직을 제거했습니다.
+- 현재는 기본 이미지 기준 ONNX 검출 1회만 수행합니다.
+
+
+문제 4. 검사 결과 외부 연동 포맷 정리
+
+원인
+- 초기 JSON에는 image path, bbox list, image size 등 많은 정보가 포함됐습니다.
+- backend 연동에는 핵심 판정 데이터만 필요했습니다.
+
+해결
+- result.json을 timestamp, judgment, label, confidence 4개 필드로 단순화했습니다.
+- 이미지는 별도 jpg 파일 2장으로 전송하도록 구조화했습니다.
+
+
+8. 데이터 흐름
+-------------
+검사 1회 기준 데이터 흐름은 다음과 같습니다.
+
+1. 컨베이어 13바퀴 이동
+2. Arduino move done 응답 수신
+3. stop 명령 및 응답 확인
+4. 카메라 프레임 안정화 확인
+5. 현재 프레임 캡처
+6. ONNX 추론
+7. wafer/defect 판정
+8. bbox/result overlay 이미지 생성
+9. original.jpg, result.jpg, result.json 저장
+10. backend 업로드
+11. UI 검사 이력 갱신
+12. Dobot pick & place 분류
+
+
+9. 저장 파일 구조
+----------------
+WPF application local 저장 구조:
+
+InspectionResults/
+  yyyyMMdd_HHmmss_fff_OK/
+    original.jpg
+    result.jpg
+    result.json
+
+backend 저장 구조:
+
+InspectionBackend/
+  inspection.db
+  uploads/
+    yyyyMMdd_HHmmss_fff_OK/
+      original.jpg
+      result.jpg
+      result.json
+
+
+10. result.json 예시
+-------------------
+{
+  "timestamp": "2026-07-01T09:59:24.0390000+09:00",
+  "judgment": "OK",
+  "label": "wafer",
+  "confidence": 0.9821
+}
+
+
+11. backend API
+---------------
+GET /api/health
+- backend 상태 확인
+
+GET /api/inspections
+- 최근 검사 이력 조회
+- SQLite DB에서 timestamp, judgment, label, confidence, image url을 반환
+
+POST /api/inspections
+- multipart/form-data 업로드
+- 필드:
+  - json: result.json
+  - original: original.jpg
+  - result: result.jpg
+
+
+12. 포트폴리오에서 강조할 수 있는 역량
+-------------------------------------
+1. AI 모델 추론 연동
+   - ONNX Runtime을 이용해 C# WPF 환경에서 YOLO 모델을 직접 실행했습니다.
+   - 모델 output shape을 분석하고 검출 결과를 application logic으로 변환했습니다.
+
+2. 영상 처리
+   - OpenCvSharp를 사용해 camera frame capture, resize, bbox drawing, image save를 구현했습니다.
+   - 검사 안정성을 위해 frame difference 기반 정지 확인 로직을 구현했습니다.
+
+3. 하드웨어 제어
+   - Arduino와 SerialPort JSON protocol로 step motor를 제어했습니다.
+   - Dobot 로봇 제어를 별도 process bridge로 분리해 안정성을 높였습니다.
+
+4. 실시간 UI와 성능 안정화
+   - WPF Dispatcher queue 적체 문제를 고려해 preview frame update를 제어했습니다.
+   - BitmapSource 누적을 줄이기 위해 이력 이미지를 file path 기반으로 관리했습니다.
+
+5. 데이터 저장과 backend 연동
+   - 검사 결과를 이미지와 JSON 파일로 저장했습니다.
+   - ASP.NET Core Minimal API와 SQLite를 이용해 local backend를 구성했습니다.
+   - frontend에서 검사 이력을 시각적으로 확인할 수 있게 구현했습니다.
+
+6. 문제 해결 중심 개발
+   - 메모리 누적, 촬영 타이밍, 업로드 부하, 추가 추론 비용 등 실제 장비 연동에서 발생할 수 있는 문제를 파악하고 개선했습니다.
+
+
+13. 자기소개서/면접용 설명 예시
+------------------------------
+이 프로젝트에서는 단순한 이미지 분류 프로그램이 아니라, 카메라, 컨베이어, ONNX 모델, 로봇 분류기, backend 저장 시스템까지 연결된 end-to-end 비전 검사 시스템을 구현했습니다.
+
+특히 실제 장비에서는 소프트웨어 로직이 맞아도 컨베이어가 완전히 멈추기 전에 촬영되거나, 반복 검사 중 UI frame queue와 이미지 객체가 누적되어 앱이 멈추는 문제가 발생했습니다.
+
+이를 해결하기 위해 카메라 프레임 간 변화량을 계산해 정지 상태를 확인한 후 촬영하도록 개선했고, WPF UI 업데이트에는 backpressure를 적용했습니다. 또한 검사 이미지를 BitmapSource로 계속 보관하지 않고 파일 경로 기반으로 관리하도록 변경했으며, backend 업로드도 StreamContent 방식으로 개선해 메모리 사용량을 줄였습니다.
+
+이 경험을 통해 AI 모델 연동뿐 아니라 실제 생산 장비와 연결되는 응용 프로그램에서는 추론 정확도, 장비 타이밍, 메모리 관리, 비동기 처리, 데이터 저장 구조를 함께 고려해야 한다는 점을 배웠습니다.
+
+
+14. README 또는 포트폴리오 페이지용 짧은 요약
+------------------------------------------
+Conveyor Inspector는 WPF, OpenCvSharp, ONNX Runtime, Arduino, Dobot, ASP.NET Core를 이용해 구현한 자동 비전 검사 시스템입니다. 컨베이어 위 wafer를 카메라로 촬영하고 YOLO ONNX 모델로 defect를 검출한 뒤, OK/NG 판정 결과에 따라 Dobot 로봇이 자동 분류합니다. 검사 결과는 original/result 이미지와 JSON으로 저장되며, local backend와 web frontend를 통해 검사 이력을 확인할 수 있습니다. 실제 장비 연동 과정에서 발생한 촬영 타이밍 문제와 반복 검사 시 메모리 누적 문제를 해결하기 위해 프레임 안정화 확인, UI update backpressure, stream 기반 업로드, 이미지 경로 기반 이력 관리를 적용했습니다.
+
+
+15. 향후 개선 방향
+-----------------
+1. backend 업로드 실패 시 재전송 queue 구현
+2. 검사 결과 검색/필터 기능 추가
+3. backend DB migration 구조 도입
+4. ONNX 모델 성능 비교 및 threshold tuning UI 추가
+5. 카메라 노출/밝기 자동 조절 기능 추가
+6. 장비 상태 heartbeat 및 알람 기능 추가
+7. 검사 통계 dashboard 고도화
+8. 실제 생산 환경 배포를 위한 logging, configuration, installer 구성
+

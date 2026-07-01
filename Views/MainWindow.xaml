@@ -1,0 +1,833 @@
+<Window x:Class="ConveyorInspector.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:ConveyorInspector.ViewModels"
+        xmlns:conv="clr-namespace:ConveyorInspector.Converters"
+        Title="Conveyor Inspector — 컨베이어 비전 검사 시스템"
+        Width="1380" Height="860"
+        MinWidth="1100" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BaseBrush}"
+        Foreground="{StaticResource TextBrush}">
+
+  <Window.DataContext>
+    <vm:MainViewModel/>
+  </Window.DataContext>
+
+  <Window.Resources>
+    <conv:BoolToVisibilityConverter x:Key="BoolVis"/>
+    <conv:InverseBoolConverter      x:Key="InvBool"/>
+    <conv:BoolToColorConverter      x:Key="BoolColor"/>
+    <conv:LogColorConverter         x:Key="LogColor"/>
+    <conv:PercentageConverter       x:Key="PctConv"/>
+  </Window.Resources>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="54"/>   <!-- Title Bar -->
+      <RowDefinition Height="*"/>    <!-- Content -->
+      <RowDefinition Height="32"/>   <!-- Status Bar -->
+    </Grid.RowDefinitions>
+
+    <!-- ══ Title Bar ══════════════════════════════════════════════ -->
+    <Border Grid.Row="0" Background="{StaticResource CrustBrush}">
+      <Grid Margin="20,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Logo + Title -->
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Border Width="32" Height="32" CornerRadius="8"
+                  Background="{StaticResource BlueBrush}" Margin="0,0,12,0">
+            <TextBlock Text="⚙" FontSize="18" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" Foreground="{StaticResource CrustBrush}"/>
+          </Border>
+          <TextBlock Text="Conveyor Inspector" FontSize="16" FontWeight="SemiBold"
+                     Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+          <TextBlock Text=" · 비전 검사 시스템" FontSize="13"
+                     Foreground="{StaticResource SubtextBrush}" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Status Pill -->
+        <Border Grid.Column="2" CornerRadius="20" Padding="14,5"
+                VerticalAlignment="Center">
+          <Border.Background>
+            <SolidColorBrush Color="#20FFFFFF"/>
+          </Border.Background>
+          <StackPanel Orientation="Horizontal">
+            <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,7,0">
+              <Ellipse.Fill>
+                <SolidColorBrush Color="{Binding StatusColor}"/>
+              </Ellipse.Fill>
+            </Ellipse>
+            <TextBlock Text="{Binding StatusText}" FontSize="12"
+                       Foreground="{StaticResource SubtextBrush}"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Border>
+
+    <!-- ══ Main Content ════════════════════════════════════════════ -->
+    <Grid Grid.Row="1" Margin="16,12,16,8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="300"/>   <!-- Left Panel -->
+        <ColumnDefinition Width="*"/>     <!-- Center (Camera) -->
+        <ColumnDefinition Width="280"/>   <!-- Right Panel -->
+      </Grid.ColumnDefinitions>
+
+      <!-- ╔══════════════╗ LEFT PANEL ╔══════════════╗ -->
+      <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,10,0">
+        <StackPanel>
+
+          <!-- Camera Settings -->
+          <Border Style="{StaticResource PanelCard}" Margin="0,0,0,10">
+            <StackPanel>
+              <TextBlock Text="카메라 설정" Style="{StaticResource SectionLabel}"/>
+
+              <TextBlock Text="카메라 선택" FontSize="11" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="36"/>
+                </Grid.ColumnDefinitions>
+                <ComboBox ItemsSource="{Binding CameraList}"
+                          SelectedItem="{Binding SelectedCamera}"
+                          Foreground="Black"
+                          FontWeight="Bold"/>
+                <Button Grid.Column="1" Width="32" Height="36"
+                        Command="{Binding RefreshCameraListCommand}"
+                        Style="{StaticResource PrimaryBtn}" Padding="0"
+                        ToolTip="새로고침" Margin="4,0,0,0">
+                  <TextBlock Text="↺" FontSize="15"/>
+                </Button>
+              </Grid>
+
+              <Button Content="{Binding IsCameraRunning, Converter={StaticResource BoolColor}, ConverterParameter='카메라 중지|카메라 시작'}"
+                      Command="{Binding ToggleCameraCommand}"
+                      Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Stretch"
+                      IsEnabled="{Binding IsBusy, Converter={StaticResource InvBool}}"/>
+            </StackPanel>
+          </Border>
+
+          <!-- Motor Settings -->
+          <Border Style="{StaticResource PanelCard}" Margin="0,0,0,10">
+            <StackPanel>
+              <TextBlock Text="모터 / 시리얼" Style="{StaticResource SectionLabel}"/>
+
+              <TextBlock Text="포트" FontSize="11" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="36"/>
+                </Grid.ColumnDefinitions>
+                <ComboBox ItemsSource="{Binding PortList}"
+                          Foreground="Black"
+                          FontWeight="Bold"
+                          SelectedItem="{Binding SelectedPort}"/>
+                <Button Grid.Column="1" Width="32" Height="36"
+                        Command="{Binding RefreshPortListCommand}"
+                        Style="{StaticResource PrimaryBtn}" Padding="0"
+                        ToolTip="포트 새로고침" Margin="4,0,0,0">
+                  <TextBlock Text="↺" FontSize="15"/>
+                </Button>
+              </Grid>
+
+              <TextBlock Text="Baud Rate" FontSize="11" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4"/>
+              <ComboBox Margin="0,0,0,8"
+                        Foreground="Black"
+                        FontWeight="Bold"
+                        SelectedItem="{Binding BaudRate}">
+                <ComboBoxItem>9600</ComboBoxItem>
+                <ComboBoxItem>57600</ComboBoxItem>
+                <ComboBoxItem IsSelected="True">115200</ComboBoxItem>
+              </ComboBox>
+
+              <Button Content="{Binding IsMotorConnected, Converter={StaticResource BoolColor}, ConverterParameter='연결 해제|Arduino 연결'}"
+                      Command="{Binding ConnectMotorCommand}"
+                      Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Stretch"
+                      Margin="0,0,0,8"/>
+
+              <!-- Connection Indicator -->
+              <Border CornerRadius="6" Padding="10,7" HorizontalAlignment="Stretch">
+                <Border.Background>
+                  <SolidColorBrush Color="#15FFFFFF"/>
+                </Border.Background>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                  <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,7,0">
+                    <Ellipse.Style>
+                      <Style TargetType="Ellipse">
+                        <Setter Property="Fill" Value="{StaticResource RedBrush}"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsMotorConnected}" Value="True">
+                            <Setter Property="Fill" Value="{StaticResource GreenBrush}"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Ellipse.Style>
+                  </Ellipse>
+                  <TextBlock FontSize="12" Foreground="{StaticResource SubtextBrush}">
+                    <TextBlock.Style>
+                      <Style TargetType="TextBlock">
+                        <Setter Property="Text" Value="미연결"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsMotorConnected}" Value="True">
+                            <Setter Property="Text" Value="연결됨"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </TextBlock.Style>
+                  </TextBlock>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Border>
+
+          <!-- Dobot Control -->
+          <Border Style="{StaticResource PanelCard}" Margin="0,0,0,10">
+            <StackPanel>
+              <TextBlock Text="Dobot 제어" Style="{StaticResource SectionLabel}"/>
+
+              <TextBlock Text="Dobot Port" FontSize="11" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="84"/>
+                </Grid.ColumnDefinitions>
+                <ComboBox ItemsSource="{Binding DobotPortList}"
+                          SelectedItem="{Binding SelectedDobotPort}"
+                          Foreground="Black"
+                          FontWeight="Bold"/>
+                <Button Grid.Column="1"
+                        Content="새로고침"
+                        Command="{Binding RefreshDobotPortsCommand}"
+                        Style="{StaticResource PrimaryBtn}"
+                        FontSize="11"
+                        Padding="8,0"
+                        Margin="6,0,0,0"/>
+              </Grid>
+
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Content="Dobot 연결"
+                        Command="{Binding ConnectDobotCommand}"
+                        Style="{StaticResource PrimaryBtn}"/>
+                <Button Grid.Column="2"
+                        Content="Dobot 비상정지"
+                        Command="{Binding DobotEmergencyStopCommand}"
+                        Style="{StaticResource DangerBtn}"
+                        FontWeight="Bold"/>
+              </Grid>
+
+              <Border CornerRadius="6" Padding="10,7" HorizontalAlignment="Stretch">
+                <Border.Background>
+                  <SolidColorBrush Color="#15FFFFFF"/>
+                </Border.Background>
+                <TextBlock Text="{Binding DobotStatusText}"
+                           TextWrapping="Wrap"
+                           FontSize="12"
+                           Foreground="{StaticResource SubtextBrush}"
+                           HorizontalAlignment="Center"/>
+              </Border>
+            </StackPanel>
+          </Border>
+
+          <!-- ONNX Model -->
+          <Border Style="{StaticResource PanelCard}" Margin="0,0,0,10">
+            <StackPanel>
+              <TextBlock Text="ONNX 모델" Style="{StaticResource SectionLabel}"/>
+
+              <Border CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
+                <Border.Background>
+                  <SolidColorBrush Color="#10FFFFFF"/>
+                </Border.Background>
+                <TextBlock Text="{Binding OnnxModelPath}" FontSize="11"
+                           Foreground="{StaticResource SubtextBrush}"
+                           TextWrapping="Wrap"/>
+              </Border>
+
+              <Button Content="모델 파일 선택 (.onnx)"
+                      Command="{Binding LoadOnnxModelCommand}"
+                      Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Stretch"
+                      Margin="0,0,0,6"/>
+
+              <!-- Model Status -->
+              <Border CornerRadius="6" Padding="10,7">
+                <Border.Style>
+                  <Style TargetType="Border">
+                    <Setter Property="Background" Value="#20F38BA8"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsModelLoaded}" Value="True">
+                        <Setter Property="Background" Value="#20A6E3A1"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Border.Style>
+                <TextBlock HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="Text" Value="데모 모드 (랜덤 추론)"/>
+                      <Setter Property="Foreground" Value="{StaticResource YellowBrush}"/>
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsModelLoaded}" Value="True">
+                          <Setter Property="Text" Value="✓ 모델 로드됨"/>
+                          <Setter Property="Foreground" Value="{StaticResource GreenBrush}"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </Border>
+            </StackPanel>
+          </Border>
+
+          <!-- Motor Manual Control -->
+          <Border Style="{StaticResource PanelCard}" Margin="0,0,0,10">
+            <StackPanel>
+              <TextBlock Text="수동 모터 제어" Style="{StaticResource SectionLabel}"/>
+
+              <TextBlock Text="회전수" FontSize="11" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4"/>
+              <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Slider Minimum="1" Maximum="20" Value="{Binding Rotations}"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        VerticalAlignment="Center"/>
+                <Border Grid.Column="1" CornerRadius="5" Padding="10,4" Margin="8,0,0,0"
+                        Background="{StaticResource Surface1Brush}">
+                  <TextBlock Text="{Binding Rotations, StringFormat={}{0}바퀴}"
+                             FontSize="13" Foreground="{StaticResource TextBrush}"
+                             VerticalAlignment="Center"/>
+                </Border>
+              </Grid>
+
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Content="◀ 역방향" Command="{Binding MotorReverseCommand}"
+                        Style="{StaticResource WarningBtn}"
+                        IsEnabled="{Binding IsBusy, Converter={StaticResource InvBool}}"/>
+                <Button Grid.Column="2" Content="정방향 ▶" Command="{Binding MotorForwardCommand}"
+                        Style="{StaticResource SuccessBtn}"
+                        IsEnabled="{Binding IsBusy, Converter={StaticResource InvBool}}"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- ╔══════════════╗ CENTER PANEL (Camera + Controls) ╔══════════════╗ -->
+      <Grid Grid.Column="1" Margin="0,0,10,0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*"/>      <!-- Camera View -->
+          <RowDefinition Height="Auto"/>   <!-- Main Controls -->
+          <RowDefinition Height="Auto"/>   <!-- Auto Controls -->
+          <RowDefinition Height="160"/>    <!-- Log -->
+        </Grid.RowDefinitions>
+
+        <!-- Camera Feed -->
+        <Border Style="{StaticResource PanelCard}" Margin="0,0,0,10"
+                Grid.Row="0">
+          <Grid>
+            <!-- Camera off placeholder -->
+            <Border CornerRadius="8" Background="{StaticResource ManleBrush}"
+                    Visibility="{Binding IsCameraRunning, Converter={StaticResource BoolVis}, ConverterParameter=inverse}">
+              <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="📷" FontSize="52" HorizontalAlignment="Center"/>
+                <TextBlock Text="카메라 비활성" FontSize="14"
+                           Foreground="{StaticResource OverlayBrush}"
+                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                <TextBlock Text="좌측 패널에서 카메라를 시작하세요" FontSize="11"
+                           Foreground="{StaticResource Surface2Brush}"
+                           HorizontalAlignment="Center" Margin="0,4,0,0"/>
+              </StackPanel>
+            </Border>
+
+            <!-- Live Feed -->
+            <Image Source="{Binding CameraFrame}" Stretch="Uniform"
+                   Visibility="{Binding IsCameraRunning, Converter={StaticResource BoolVis}}"
+                   RenderOptions.BitmapScalingMode="HighQuality"/>
+
+            <!-- Temporary inspection overlay -->
+            <Image Source="{Binding InspectionOverlayFrame}" Stretch="Uniform"
+                   Visibility="{Binding IsInspectionOverlayVisible, Converter={StaticResource BoolVis}}"
+                   RenderOptions.BitmapScalingMode="HighQuality"
+                   Panel.ZIndex="2"/>
+
+            <!-- Motor Direction Overlay -->
+            <Border HorizontalAlignment="Left" VerticalAlignment="Top"
+                    CornerRadius="6" Padding="10,5" Margin="8,8,0,0"
+                    Visibility="{Binding IsCameraRunning, Converter={StaticResource BoolVis}}"
+                    Panel.ZIndex="3">
+              <Border.Background>
+                <SolidColorBrush Color="#CC11111B"/>
+              </Border.Background>
+              <TextBlock Text="{Binding MotorDirectionText}" FontSize="14"
+                         FontWeight="Bold" Foreground="{StaticResource BlueBrush}"/>
+            </Border>
+
+            <!-- Busy indicator -->
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+                    CornerRadius="6" Padding="10,5" Margin="0,8,8,0"
+                    Visibility="{Binding IsBusy, Converter={StaticResource BoolVis}}">
+              <Border.Background>
+                <SolidColorBrush Color="#CC11111B"/>
+              </Border.Background>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="⏳ " FontSize="12"/>
+                <TextBlock Text="{Binding StatusText}" FontSize="12"
+                           Foreground="{StaticResource YellowBrush}"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </Border>
+
+        <!-- Main Action Controls -->
+        <Border Style="{StaticResource PanelCard}" Grid.Row="1" Margin="0,0,0,10">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="12"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Content="🔍  검사 실행  (정방향 → 분석 → 결과 이송)"
+                    Command="{Binding RunInspectionCommand}"
+                    Style="{StaticResource PrimaryBtn}"
+                    FontSize="14" Height="48"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InvBool}}"/>
+
+            <Button Grid.Column="2" Content="⚠  비상정지"
+                    Command="{Binding EmergencyStopCommand}"
+                    Style="{StaticResource DangerBtn}"
+                    FontSize="13" Height="48" Padding="20,0"/>
+          </Grid>
+        </Border>
+
+        <!-- Auto Inspection Controls -->
+        <Border Style="{StaticResource PanelCard}" Grid.Row="2" Margin="0,0,0,10">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="8"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="8"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Content="자동 검사 시작"
+                    Command="{Binding StartAutoInspectionCommand}"
+                    Style="{StaticResource SuccessBtn}"
+                    FontSize="13" Height="40"
+                    IsEnabled="{Binding IsAutoInspectionRunning, Converter={StaticResource InvBool}}"/>
+
+            <Button Grid.Column="2"
+                    Content="자동 검사 중지"
+                    Command="{Binding StopAutoInspectionCommand}"
+                    Style="{StaticResource DangerBtn}"
+                    FontSize="13" Height="40"
+                    IsEnabled="{Binding IsAutoInspectionRunning}"/>
+
+            <Button Grid.Column="4"
+                    Content="비상정지 해제"
+                    Command="{Binding ResetEmergencyStopCommand}"
+                    Style="{StaticResource PrimaryBtn}"
+                    FontSize="13" Height="40"
+                    IsEnabled="{Binding IsEmergencyStopped}"/>
+          </Grid>
+        </Border>
+
+        <!-- Log Panel -->
+        <Border Style="{StaticResource PanelCard}" Grid.Row="3">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Grid Margin="0,0,0,8">
+              <TextBlock Text="실행 로그" Style="{StaticResource SectionLabel}"
+                         VerticalAlignment="Center"/>
+              <Button Content="지우기" HorizontalAlignment="Right"
+                      Command="{Binding ClearLogCommand}"
+                      Style="{StaticResource PrimaryBtn}"
+                      FontSize="11" Padding="10,4" Height="26"/>
+            </Grid>
+
+            <ListBox Grid.Row="1" ItemsSource="{Binding LogItems}"
+                     Style="{StaticResource LogListBox}"                     
+                     ItemContainerStyle="{StaticResource LogItem}"
+                     x:Name="LogBox">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock>
+                    <Run Text="{Binding Time}" Foreground="#585B70"/>
+                    <Run Text=" "/>
+                    <Run Text="{Binding Message}" Foreground="{Binding Color}"/>
+                  </TextBlock>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- ╔══════════════╗ RIGHT PANEL ╔══════════════╗ -->
+      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+
+          <!-- Last Result Card -->
+          <Border Margin="0,0,0,10" CornerRadius="10" Padding="16">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource Surface0Brush}"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding LastResultColor}" Value="#A6E3A1">
+                    <Setter Property="Background" Value="#1AA6E3A1"/>
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding LastResultColor}" Value="#F38BA8">
+                    <Setter Property="Background" Value="#1AF38BA8"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <Border.Effect>
+              <DropShadowEffect Color="#000000" BlurRadius="18" ShadowDepth="2" Opacity="0.35"/>
+            </Border.Effect>
+            <StackPanel>
+              <TextBlock Text="최근 검사 결과" Style="{StaticResource SectionLabel}"/>
+              <TextBlock Text="{Binding LastResult}" FontSize="16" FontWeight="Bold"
+                         Foreground="{Binding LastResultColor}"
+                         TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+              <Border Height="130" CornerRadius="8" Margin="0,0,0,10"
+                      Background="{StaticResource ManleBrush}"
+                      Visibility="{Binding HasLastInspectionImage, Converter={StaticResource BoolVis}}"
+                      Cursor="Hand"
+                      ToolTip="큰 이미지 보기">
+                <Border.InputBindings>
+                  <MouseBinding Gesture="LeftClick"
+                                Command="{Binding OpenImagePreviewCommand}"
+                                CommandParameter="{Binding LastInspectionImagePath}"/>
+                </Border.InputBindings>
+                <Image Source="{Binding LastInspectionImagePath}"
+                       Stretch="Uniform"
+                       RenderOptions.BitmapScalingMode="HighQuality"/>
+              </Border>
+
+              <!-- Confidence bar -->
+              <TextBlock Text="신뢰도" FontSize="11"
+                         Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4"/>
+              <Grid Height="10" Margin="0,0,0,4">
+                <Border CornerRadius="5" Background="{StaticResource Surface1Brush}"/>
+                <Border CornerRadius="5" HorizontalAlignment="Left">
+                  <Border.Width>
+                    <MultiBinding Converter="{StaticResource PctConv}">
+                      <Binding Path="Confidence"/>
+                      <Binding RelativeSource="{RelativeSource AncestorType=Grid}" Path="ActualWidth"/>
+                    </MultiBinding>
+                  </Border.Width>
+                  <Border.Background>
+                    <SolidColorBrush Color="{StaticResource BlueColor}"/>
+                  </Border.Background>
+                </Border>
+              </Grid>
+              <TextBlock Text="{Binding Confidence, StringFormat={}{0:P1}}"
+                         FontSize="12" Foreground="{StaticResource SubtextBrush}"
+                         HorizontalAlignment="Right"/>
+            </StackPanel>
+          </Border>
+
+          <!-- Stats Card -->
+          <Border Style="{StaticResource PanelCard}" Margin="0,0,0,10">
+            <StackPanel>
+              <Grid Margin="0,0,0,10">
+                <TextBlock Text="검사 통계" Style="{StaticResource SectionLabel}"
+                           VerticalAlignment="Center"/>
+                <Button Content="초기화" HorizontalAlignment="Right"
+                        Command="{Binding ClearStatsCommand}"
+                        Style="{StaticResource PrimaryBtn}"
+                        FontSize="11" Padding="10,4" Height="26"/>
+              </Grid>
+
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Total -->
+                <Border CornerRadius="8" Padding="10,12" Margin="0,0,4,0"
+                        Background="{StaticResource Surface1Brush}">
+                  <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TotalInspected}" FontSize="24"
+                               FontWeight="Bold" Foreground="{StaticResource TextBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="전체" FontSize="10"
+                               Foreground="{StaticResource SubtextBrush}"
+                               HorizontalAlignment="Center"/>
+                  </StackPanel>
+                </Border>
+
+                <!-- Pass -->
+                <Border Grid.Column="1" CornerRadius="8" Padding="10,12"
+                        Margin="0,0,4,0" Background="#1AA6E3A1">
+                  <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TotalPass}" FontSize="24"
+                               FontWeight="Bold" Foreground="{StaticResource GreenBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="정상" FontSize="10"
+                               Foreground="{StaticResource SubtextBrush}"
+                               HorizontalAlignment="Center"/>
+                  </StackPanel>
+                </Border>
+
+                <!-- Fail -->
+                <Border Grid.Column="2" CornerRadius="8" Padding="10,12"
+                        Background="#1AF38BA8">
+                  <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TotalFail}" FontSize="24"
+                               FontWeight="Bold" Foreground="{StaticResource RedBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="불량" FontSize="10"
+                               Foreground="{StaticResource SubtextBrush}"
+                               HorizontalAlignment="Center"/>
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <!-- Pass Rate bar -->
+              <Separator Margin="0,12"/>
+              <TextBlock Text="양품률" FontSize="11"
+                         Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,4"/>
+              <Grid Height="12" Margin="0,0,0,4">
+                <Border CornerRadius="6" Background="{StaticResource Surface1Brush}"/>
+                <Border CornerRadius="6" HorizontalAlignment="Left">
+                  <Border.Width>
+                    <MultiBinding Converter="{StaticResource PctConv}" ConverterParameter="div100">
+                      <Binding Path="PassRate"/>
+                      <Binding RelativeSource="{RelativeSource AncestorType=Grid}" Path="ActualWidth"/>
+                    </MultiBinding>
+                  </Border.Width>
+                  <Border.Background>
+                    <SolidColorBrush Color="{StaticResource GreenColor}"/>
+                  </Border.Background>
+                </Border>
+              </Grid>
+              <TextBlock Text="{Binding PassRate, StringFormat={}{0:F1}%}"
+                         FontSize="12" FontWeight="SemiBold"
+                         Foreground="{StaticResource GreenBrush}"
+                         HorizontalAlignment="Right"/>
+            </StackPanel>
+          </Border>
+
+          <!-- History -->
+          <Border Style="{StaticResource PanelCard}">
+            <StackPanel>
+              <TextBlock Text="검사 이력" Style="{StaticResource SectionLabel}"/>
+              <ItemsControl ItemsSource="{Binding History}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border CornerRadius="6" Padding="10,8" Margin="0,0,0,4">
+                      <Border.Background>
+                        <SolidColorBrush Color="#15FFFFFF"/>
+                      </Border.Background>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                          <TextBlock Text="{Binding StatusText}" FontSize="12"
+                                     FontWeight="SemiBold">
+                            <TextBlock.Style>
+                              <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource GreenBrush}"/>
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding Status}" Value="Fail">
+                                    <Setter Property="Foreground" Value="{StaticResource RedBrush}"/>
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </TextBlock.Style>
+                          </TextBlock>
+                          <TextBlock Text="{Binding Label}" FontSize="10"
+                                     Foreground="{StaticResource SubtextBrush}"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Width="44" Height="34" CornerRadius="4"
+                                Margin="8,0,8,0"
+                                Background="{StaticResource ManleBrush}"
+                                Visibility="{Binding HasResultImage, Converter={StaticResource BoolVis}}"
+                                Cursor="Hand"
+                                ToolTip="큰 이미지 보기">
+                          <Border.InputBindings>
+                            <MouseBinding Gesture="LeftClick"
+                                          Command="{Binding DataContext.OpenImagePreviewCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                          CommandParameter="{Binding ResultImagePath}"/>
+                          </Border.InputBindings>
+                          <Image Source="{Binding ResultImagePath}"
+                                 Stretch="UniformToFill"
+                                 RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </Border>
+                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                   Text="{Binding Timestamp, StringFormat={}{0:HH:mm:ss}}"
+                                   FontSize="10" Foreground="{StaticResource OverlayBrush}"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
+        </StackPanel>
+      </ScrollViewer>
+
+    </Grid>
+
+    <!-- ══ Status Bar ══════════════════════════════════════════════ -->
+    <Border Grid.Row="2" Background="{StaticResource CrustBrush}" Padding="16,0">
+      <Grid>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <!-- Camera status -->
+          <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
+            <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="0,0,5,0">
+              <Ellipse.Style>
+                <Style TargetType="Ellipse">
+                  <Setter Property="Fill" Value="{StaticResource Surface2Brush}"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsCameraRunning}" Value="True">
+                      <Setter Property="Fill" Value="{StaticResource TealBrush}"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Ellipse.Style>
+            </Ellipse>
+            <TextBlock FontSize="11" Foreground="{StaticResource OverlayBrush}">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Text" Value="카메라: OFF"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsCameraRunning}" Value="True">
+                      <Setter Property="Text" Value="카메라: ON"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </StackPanel>
+
+          <!-- Motor status -->
+          <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
+            <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="0,0,5,0">
+              <Ellipse.Style>
+                <Style TargetType="Ellipse">
+                  <Setter Property="Fill" Value="{StaticResource Surface2Brush}"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsMotorConnected}" Value="True">
+                      <Setter Property="Fill" Value="{StaticResource GreenBrush}"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Ellipse.Style>
+            </Ellipse>
+            <TextBlock FontSize="11" Foreground="{StaticResource OverlayBrush}">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Text" Value="모터: 미연결"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsMotorConnected}" Value="True">
+                      <Setter Property="Text" Value="모터: 연결됨"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </StackPanel>
+
+          <!-- ONNX status -->
+          <StackPanel Orientation="Horizontal">
+            <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="0,0,5,0">
+              <Ellipse.Style>
+                <Style TargetType="Ellipse">
+                  <Setter Property="Fill" Value="{StaticResource YellowBrush}"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsModelLoaded}" Value="True">
+                      <Setter Property="Fill" Value="{StaticResource GreenBrush}"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Ellipse.Style>
+            </Ellipse>
+            <TextBlock FontSize="11" Foreground="{StaticResource OverlayBrush}">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Text" Value="ONNX: 데모 모드"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsModelLoaded}" Value="True">
+                      <Setter Property="Text" Value="ONNX: 로드됨"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </StackPanel>
+        </StackPanel>
+
+        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                   Text="Conveyor Inspector v1.0  ·  Catppuccin Mocha"
+                   FontSize="10" Foreground="{StaticResource Surface2Brush}"/>
+      </Grid>
+    </Border>
+
+    <!-- Large image preview -->
+    <Grid Grid.RowSpan="3"
+          Background="#CC000000"
+          Visibility="{Binding IsImagePreviewOpen, Converter={StaticResource BoolVis}}"
+          Panel.ZIndex="50">
+      <Grid.InputBindings>
+        <MouseBinding Gesture="LeftClick"
+                      Command="{Binding CloseImagePreviewCommand}"/>
+      </Grid.InputBindings>
+      <Border Margin="56"
+              Padding="14"
+              CornerRadius="10"
+              Background="{StaticResource CrustBrush}"
+              BorderBrush="{StaticResource Surface2Brush}"
+              BorderThickness="1">
+        <Border.InputBindings>
+          <MouseBinding Gesture="LeftClick"
+                        Command="{x:Static ApplicationCommands.NotACommand}"/>
+        </Border.InputBindings>
+        <Grid>
+          <Button Content="닫기"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Top"
+                  Command="{Binding CloseImagePreviewCommand}"
+                  Style="{StaticResource PrimaryBtn}"
+                  Padding="14,6"
+                  Height="32"
+                  Panel.ZIndex="2"/>
+          <Image Source="{Binding PreviewImage}"
+                 Stretch="Uniform"
+                 Margin="0,42,0,0"
+                 RenderOptions.BitmapScalingMode="HighQuality"/>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

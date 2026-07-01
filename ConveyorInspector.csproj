@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>ConveyorInspector</AssemblyName>
+    <RootNamespace>ConveyorInspector</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="DobotBridge\**\*.cs" />
+    <None Remove="DobotBridge\**\*" />
+    <Compile Remove="InspectionBackend\**\*.cs" />
+    <None Remove="InspectionBackend\**\*" />
+    <Content Remove="InspectionBackend\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.17.3" />
+    <PackageReference Include="OpenCvSharp4" Version="4.9.0.20240103" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.9.0.20240103" />
+    <PackageReference Include="OpenCvSharp4.WpfExtensions" Version="4.9.0.20240103" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="DobotDll.dll" CopyToOutputDirectory="Never" />
+    <Content Include="Qt5Core.dll" CopyToOutputDirectory="Never" />
+    <Content Include="Qt5Network.dll" CopyToOutputDirectory="Never" />
+    <Content Include="Qt5SerialPort.dll" CopyToOutputDirectory="Never" />
+    <Content Include="msvcp120.dll" CopyToOutputDirectory="Never" />
+    <Content Include="msvcr120.dll" CopyToOutputDirectory="Never" />
+  </ItemGroup>
+
+  <Target Name="BuildDobotBridge" AfterTargets="Build">
+    <MSBuild Projects="DobotBridge\DobotBridge.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);Platform=AnyCPU;OutDir=$(MSBuildProjectDirectory)\$(OutDir)" />
+  </Target>
+
+</Project>
