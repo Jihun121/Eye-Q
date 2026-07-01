@@ -6,6 +6,7 @@ OK/NG 판정 결과에 따라 Dobot 로봇으로 자동 분류하는 end-to-end 
 
 <img width="1356" height="812" alt="스크린샷 2026-07-01 130903" src="https://github.com/user-attachments/assets/e4f74339-f169-4057-ac13-574c5cfeea59" />
 <img width="1343" height="805" alt="스크린샷 2026-07-01 130923" src="https://github.com/user-attachments/assets/5a34f5fc-d1a8-4ec4-8a74-7ecba8f94c2c" />
+<img width="1876" height="870" alt="스크린샷 2026-07-01 131942" src="https://github.com/user-attachments/assets/87179c91-9285-4a78-850b-05ef252d5b03" />
 
 
 ## 주요 기능
